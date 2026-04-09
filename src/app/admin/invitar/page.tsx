@@ -17,6 +17,7 @@ interface InviteToken {
   email: string;
   full_name: string;
   house_number: string;
+  role: "admin" | "resident";
   is_used: boolean;
   expires_at: string;
   token: string;
@@ -26,7 +27,7 @@ export default function InvitarPage() {
   const supabase = createClient();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [invites, setInvites] = useState<InviteToken[]>([]);
-  const [form, setForm] = useState({ email: "", full_name: "", house_number: "" });
+  const [form, setForm] = useState({ email: "", full_name: "", house_number: "", role: "resident" as "admin" | "resident" });
   const [loading, setLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -64,20 +65,22 @@ export default function InvitarPage() {
     const houseNumber = form.house_number.trim();
     const email = form.email.toLowerCase().trim();
 
-    // 1. Verificar que la casa no tenga ya una cuenta de residente activa
-    const { data: existingProfile } = await supabase
-      .from("profiles")
-      .select("id, full_name")
-      .eq("house_number", houseNumber)
-      .eq("role", "resident");
+    // 1. Verificar que la casa no tenga ya una cuenta de residente activa (solo si vas a crear un residente)
+    if (form.role === "resident") {
+      const { data: existingProfile } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .eq("house_number", houseNumber)
+        .eq("role", "resident");
 
-    if (existingProfile && existingProfile.length > 0) {
-      setMessage({
-        type: "error",
-        text: `La casa ${houseNumber} ya tiene una cuenta registrada (${existingProfile[0].full_name}). Solo puede haber un usuario por casa.`,
-      });
-      setLoading(false);
-      return;
+      if (existingProfile && existingProfile.length > 0) {
+        setMessage({
+          type: "error",
+          text: `La casa ${houseNumber} ya tiene un condomino registrado (${existingProfile[0].full_name}). Solo puede haber un condomino por casa.`,
+        });
+        setLoading(false);
+        return;
+      }
     }
 
     // 2. Verificar que no haya una invitación activa pendiente para esa casa
@@ -113,13 +116,13 @@ export default function InvitarPage() {
     }
 
     // 4. Todo OK, crear la invitación
-    const result = await createInvite(email, form.full_name.trim(), houseNumber, profile.id);
+    const result = await createInvite(email, form.full_name.trim(), houseNumber, profile.id, form.role);
 
     if (!result.success) {
       setMessage({ type: "error", text: "Error al crear invitación: " + result.error });
     } else {
       setInvites([result.data, ...invites]);
-      setForm({ email: "", full_name: "", house_number: "" });
+      setForm({ email: "", full_name: "", house_number: "", role: "resident" });
       setMessage({ type: "success", text: "Invitación creada. Copia el link y envíalo al condomino." });
     }
     setLoading(false);
@@ -139,8 +142,17 @@ export default function InvitarPage() {
   };
 
   const handleDeleteInvite = async (id: string) => {
+    // Optimistic update - remove immediately
+    const filteredInvites = invites.filter((i) => i.id !== id);
+    setInvites(filteredInvites);
+
+    // Try to delete from server
     const result = await deleteInvite(id);
-    if (result.success) setInvites(invites.filter((i) => i.id !== id));
+    if (!result.success) {
+      // Revert if failed
+      setInvites(invites);
+      setMessage({ type: "error", text: "No se pudo eliminar la invitación." });
+    }
   };
 
   if (!profile) {
@@ -188,6 +200,33 @@ export default function InvitarPage() {
                   onChange={(e) => setForm({ ...form, house_number: e.target.value })}
                   className="input" placeholder="Ej: 42" required />
               </div>
+              <div className="col-span-2">
+                <label className="label">Tipo de usuario</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, role: "resident" })}
+                    className={`py-2.5 rounded-xl font-semibold transition-all ${
+                      form.role === "resident"
+                        ? "bg-brand-600 text-white shadow-sm"
+                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
+                  >
+                    👥 Condomino
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, role: "admin" })}
+                    className={`py-2.5 rounded-xl font-semibold transition-all ${
+                      form.role === "admin"
+                        ? "bg-red-600 text-white shadow-sm"
+                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
+                  >
+                    🔐 Administrador
+                  </button>
+                </div>
+              </div>
             </div>
 
             {message && (
@@ -214,7 +253,16 @@ export default function InvitarPage() {
                 <div key={inv.id} className="p-4 bg-amber-50 border border-amber-200 rounded-2xl space-y-3">
                   <div className="flex items-start justify-between">
                     <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-sm text-gray-900">{inv.full_name}</p>
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="font-semibold text-sm text-gray-900">{inv.full_name}</p>
+                        <span className={`chip text-[10px] flex-shrink-0 ${
+                          inv.role === "admin"
+                            ? "bg-red-100 text-red-700"
+                            : "bg-blue-100 text-blue-700"
+                        }`}>
+                          {inv.role === "admin" ? "🔐 Admin" : "👥 Condomino"}
+                        </span>
+                      </div>
                       <p className="text-xs text-gray-500 truncate">{inv.email} · Casa {inv.house_number}</p>
                       <p className="text-xs text-amber-600 mt-0.5">
                         Vence {new Date(inv.expires_at).toLocaleDateString("es-MX")}

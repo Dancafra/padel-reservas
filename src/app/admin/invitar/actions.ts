@@ -7,7 +7,8 @@ export async function createInvite(
   email: string,
   fullName: string,
   houseNumber: string,
-  createdBy: string
+  createdBy: string,
+  role: "admin" | "resident" = "resident"
 ) {
   try {
     const admin = await createAdminClient();
@@ -19,6 +20,7 @@ export async function createInvite(
         email,
         full_name: fullName,
         house_number: houseNumber,
+        role,
         token,
         created_by: createdBy,
         expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),

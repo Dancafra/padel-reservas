@@ -7,6 +7,7 @@ export async function createProfileFromInvite(
   email: string,
   fullName: string,
   houseNumber: string,
+  role: "admin" | "resident" = "resident",
   token: string
 ) {
   try {
@@ -18,9 +19,9 @@ export async function createProfileFromInvite(
       email,
       full_name: fullName,
       house_number: houseNumber,
-      role: "resident",
+      role: role,
       is_active: true,
-      monthly_slots_limit: 8,
+      monthly_slots_limit: 12,
     });
 
     if (profileError) {

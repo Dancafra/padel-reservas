@@ -15,6 +15,7 @@ function RegisterForm() {
     email: string;
     full_name: string;
     house_number: string;
+    role: "admin" | "resident";
   } | null>(null);
 
   const [password, setPassword] = useState("");
@@ -34,7 +35,7 @@ function RegisterForm() {
     const validateToken = async () => {
       const { data, error } = await supabase
         .from("invite_tokens")
-        .select("email, full_name, house_number, is_used, expires_at, id")
+        .select("email, full_name, house_number, role, is_used, expires_at, id")
         .eq("token", token)
         .single();
 
@@ -49,6 +50,7 @@ function RegisterForm() {
           email: data.email,
           full_name: data.full_name,
           house_number: data.house_number,
+          role: data.role || "resident",
         });
       }
       setValidating(false);
@@ -94,6 +96,7 @@ function RegisterForm() {
           inviteData!.email,
           inviteData!.full_name,
           inviteData!.house_number,
+          inviteData!.role,
           token!
         );
 
