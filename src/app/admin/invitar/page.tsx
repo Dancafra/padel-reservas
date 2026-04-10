@@ -32,6 +32,15 @@ export default function InvitarPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
+  const loadInvites = async () => {
+    const { data: inviteData } = await supabase
+      .from("invite_tokens")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(20);
+    setInvites(inviteData ?? []);
+  };
+
   useEffect(() => {
     const loadData = async () => {
       const {
@@ -46,14 +55,13 @@ export default function InvitarPage() {
         .single();
       setProfile(profileData);
 
-      const { data: inviteData } = await supabase
-        .from("invite_tokens")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(20);
-      setInvites(inviteData ?? []);
+      loadInvites();
     };
     loadData();
+
+    // Refetch invites every 30 seconds to catch used ones
+    const interval = setInterval(loadInvites, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleCreateInvite = async (e: React.FormEvent) => {
@@ -62,8 +70,19 @@ export default function InvitarPage() {
     setLoading(true);
     setMessage(null);
 
-    const houseNumber = form.house_number.trim();
     const email = form.email.toLowerCase().trim();
+
+    // Validar que si es resident, tenga house_number
+    if (form.role === "resident" && !form.house_number.trim()) {
+      setMessage({
+        type: "error",
+        text: "Debes especificar una casa para un condomino.",
+      });
+      setLoading(false);
+      return;
+    }
+
+    const houseNumber = form.house_number.trim();
 
     // 1. Verificar que la casa no tenga ya una cuenta de residente activa (solo si vas a crear un residente)
     if (form.role === "resident") {
@@ -194,12 +213,14 @@ export default function InvitarPage() {
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
                   className="input" placeholder="juan@correo.com" required />
               </div>
-              <div className="col-span-2 sm:col-span-1">
-                <label className="label">Casa #</label>
-                <input type="text" value={form.house_number}
-                  onChange={(e) => setForm({ ...form, house_number: e.target.value })}
-                  className="input" placeholder="Ej: 42" required />
-              </div>
+              {form.role === "resident" && (
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="label">Casa #</label>
+                  <input type="text" value={form.house_number}
+                    onChange={(e) => setForm({ ...form, house_number: e.target.value })}
+                    className="input" placeholder="Ej: 42" required />
+                </div>
+              )}
               <div className="col-span-2">
                 <label className="label">Tipo de usuario</label>
                 <div className="grid grid-cols-2 gap-2">

@@ -11,6 +11,10 @@ export async function createInvite(
   role: "admin" | "resident" = "resident"
 ) {
   try {
+    console.log("🔍 Environment vars:", {
+      url: process.env.NEXT_PUBLIC_SUPABASE_URL ? "✓ exists" : "✗ missing",
+      key: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? "✓ exists" : "✗ missing",
+    });
     const admin = await createAdminClient();
     const token = crypto.randomBytes(32).toString("hex");
 
@@ -19,7 +23,7 @@ export async function createInvite(
       .insert({
         email,
         full_name: fullName,
-        house_number: houseNumber,
+        house_number: role === "admin" ? null : houseNumber,
         role,
         token,
         created_by: createdBy,
