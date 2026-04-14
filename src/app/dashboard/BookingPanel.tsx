@@ -252,7 +252,7 @@ export default function BookingPanel({
 
       {/* Reserva existente */}
       {existingReservation && (
-        <div className="relative overflow-hidden bg-gradient-to-br from-brand-50 to-emerald-50 border border-brand-200 rounded-2xl p-4">
+        <div className="relative overflow-hidden bg-gradient-to-br from-brand-50 to-emerald-50 border border-brand-200 rounded-2xl p-4 space-y-3">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-brand-500 to-brand-600 text-white flex items-center justify-center text-xl shadow-sm shadow-brand-600/20 flex-shrink-0">
               ✓
@@ -265,14 +265,8 @@ export default function BookingPanel({
                 {formatTime(existingReservation.slot_start.substring(0, 5))} – {formatTime(existingReservation.slot_end.substring(0, 5))}
               </p>
             </div>
-            <button
-              onClick={handleCancel}
-              disabled={cancelLoading}
-              className="text-xs font-medium px-3 py-1.5 rounded-lg bg-white/70 text-red-600 hover:bg-white hover:text-red-700 transition-all disabled:opacity-50 flex-shrink-0"
-            >
-              {cancelLoading ? "..." : "Cancelar"}
-            </button>
           </div>
+          <p className="text-xs text-brand-600 px-3">Para cancelar esta reserva, ve a "Mis Reservas"</p>
         </div>
       )}
 

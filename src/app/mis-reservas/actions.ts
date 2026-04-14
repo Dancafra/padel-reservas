@@ -26,7 +26,7 @@ export async function cancelReservation(formData: FormData) {
       return { error: "No autorizado", success: false };
     }
 
-    // Verify cancellation is allowed (more than 180 minutes before start)
+    // Verify cancellation is allowed (more than 120 minutes before start)
     // Use absolute UTC times — the reservation time is interpreted as QR time
     const nowUTC = new Date();
     const reservationUTC = parseQRDateTimeToUTC(
@@ -34,10 +34,10 @@ export async function cancelReservation(formData: FormData) {
       reservation.slot_start
     );
     const timeUntilStart = reservationUTC.getTime() - nowUTC.getTime();
-    const threeHoursMs = 180 * 60 * 1000;
+    const twoHoursMs = 120 * 60 * 1000;
 
-    if (timeUntilStart <= threeHoursMs) {
-      return { error: "Solo puedes cancelar hasta 3 horas antes de que comience", success: false };
+    if (timeUntilStart <= twoHoursMs) {
+      return { error: "Solo puedes cancelar hasta 2 horas antes de que comience", success: false };
     }
 
     // Delete the reservation
