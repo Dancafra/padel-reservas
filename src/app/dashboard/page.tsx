@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import Navigation from "@/components/Navigation";
 import BookingPanel from "./BookingPanel";
@@ -51,7 +51,9 @@ export default async function DashboardPage() {
   const todayReservation = (reservationsData ?? []).find(r => r.reservation_date === todayStr);
   const tomorrowReservation = (reservationsData ?? []).find(r => r.reservation_date === tomorrow);
 
-  const { data: takenSlotsAll } = await supabase
+  // Usar adminClient para ver TODAS las reservas (no solo las del usuario)
+  const adminSupabase = await createAdminClient();
+  const { data: takenSlotsAll } = await adminSupabase
     .from("reservations")
     .select("reservation_date, slot_start, slot_end")
     .in("reservation_date", [todayStr, tomorrow])
