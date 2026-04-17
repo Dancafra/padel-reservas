@@ -2,6 +2,16 @@
 
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 
+function slotsOverlap(s1: string, e1: string, s2: string, e2: string) {
+  return s1 < e2 && s2 < e1;
+}
+
+function addMinutes(time: string, minutes: number): string {
+  const [h, m] = time.split(":").map(Number);
+  const total = h * 60 + m + minutes;
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+
 export async function createReservationAsAdmin(
   _prevState: { error: string; success: boolean },
   formData: FormData
@@ -10,21 +20,24 @@ export async function createReservationAsAdmin(
     const supabase = await createClient();
     const adminClient = await createAdminClient();
 
-    const email = formData.get("email") as string;
-    const fullName = formData.get("full_name") as string;
-    const houseNumber = formData.get("house_number") as string;
+    const email = (formData.get("email") as string)?.trim();
+    const fullName = (formData.get("full_name") as string)?.trim();
+    const houseNumber = (formData.get("house_number") as string)?.trim();
     const reservationDate = formData.get("reservation_date") as string;
-    const slotStart = formData.get("slot_start") as string;
+    const slotStartRaw = formData.get("slot_start") as string; // "HH:MM:00"
     const durationStr = formData.get("duration") as string;
     const duration = parseInt(durationStr) || 60;
     const playerNamesJson = formData.get("player_names") as string;
-    const playerNames = playerNamesJson ? JSON.parse(playerNamesJson) : [];
+    const playerNames: string[] = playerNamesJson ? JSON.parse(playerNamesJson) : [];
 
-    if (!email || !fullName || !houseNumber || !reservationDate || !slotStart) {
+    if (!email || !fullName || !houseNumber || !reservationDate || !slotStartRaw) {
       return { error: "Todos los campos son requeridos", success: false };
     }
 
-    // Validate user is admin
+    // Normalizar hora a HH:MM
+    const slotStartHHMM = slotStartRaw.substring(0, 5);
+
+    // Validar admin
     const {
       data: { user: currentUser },
     } = await supabase.auth.getUser();
@@ -42,76 +55,131 @@ export async function createReservationAsAdmin(
       return { error: "Permiso denegado", success: false };
     }
 
-    // Find or create the user
+    // Calcular fin del turno
+    const slotEndHHMM = addMinutes(slotStartHHMM, duration);
+    if (slotEndHHMM > "22:00") {
+      return { error: "El turno no puede terminar después de las 22:00", success: false };
+    }
+
+    // Validar conflictos con reservas existentes
+    const { data: existingReservations, error: resQueryError } = await adminClient
+      .from("reservations")
+      .select("slot_start, slot_end")
+      .eq("reservation_date", reservationDate)
+      .eq("status", "confirmed");
+
+    if (resQueryError) {
+      return { error: "Error consultando reservas: " + resQueryError.message, success: false };
+    }
+
+    const reservationConflict = (existingReservations ?? []).some((r) =>
+      slotsOverlap(
+        slotStartHHMM,
+        slotEndHHMM,
+        r.slot_start.substring(0, 5),
+        r.slot_end.substring(0, 5)
+      )
+    );
+    if (reservationConflict) {
+      return {
+        error: `Ese horario (${slotStartHHMM}-${slotEndHHMM}) choca con otra reserva existente`,
+        success: false,
+      };
+    }
+
+    // Validar conflictos con bloques administrativos
+    const { data: existingBlocks } = await adminClient
+      .from("blocked_slots")
+      .select("slot_start, slot_end")
+      .eq("block_date", reservationDate);
+
+    const blockConflict = (existingBlocks ?? []).some((b) =>
+      slotsOverlap(
+        slotStartHHMM,
+        slotEndHHMM,
+        b.slot_start.substring(0, 5),
+        b.slot_end.substring(0, 5)
+      )
+    );
+    if (blockConflict) {
+      return { error: "Ese horario está bloqueado", success: false };
+    }
+
+    // Buscar o crear usuario
     let userId: string;
-    const { data: existingProfile } = await supabase
+    const { data: existingProfile } = await adminClient
       .from("profiles")
       .select("id")
       .eq("email", email)
-      .single();
+      .maybeSingle();
 
     if (existingProfile) {
       userId = existingProfile.id;
     } else {
-      // Create new user with admin client (bypasses RLS)
       const { data: newUser, error: createUserError } = await adminClient.auth.admin.createUser({
         email,
-        password: Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15),
+        password:
+          Math.random().toString(36).substring(2, 15) +
+          Math.random().toString(36).substring(2, 15),
         email_confirm: true,
       });
 
       if (createUserError || !newUser.user) {
-        return { error: "Error creando usuario", success: false };
+        return {
+          error: "Error creando usuario: " + (createUserError?.message ?? "desconocido"),
+          success: false,
+        };
       }
 
       userId = newUser.user.id;
 
-      // Create profile for new user
-      const { error: profileError } = await adminClient
-        .from("profiles")
-        .insert({
-          id: userId,
-          email,
-          full_name: fullName,
-          house_number: houseNumber,
-          role: "resident",
-          monthly_slots_limit: 8,
-        });
+      const { error: profileError } = await adminClient.from("profiles").insert({
+        id: userId,
+        email,
+        full_name: fullName,
+        house_number: houseNumber,
+        role: "resident",
+        monthly_slots_limit: 12,
+      });
 
       if (profileError) {
-        return { error: "Error creando perfil", success: false };
+        return { error: "Error creando perfil: " + profileError.message, success: false };
       }
     }
 
-    // Calculate slot end based on duration
-    const [hours, minutes] = slotStart.split(":").map(Number);
-    const totalMinutes = hours * 60 + minutes + duration;
-    const endHours = Math.floor(totalMinutes / 60);
-    const endMinutes = totalMinutes % 60;
-    const slotEnd = `${String(endHours).padStart(2, "0")}:${String(endMinutes).padStart(2, "0")}:00`;
+    // Crear reserva
+    const slotStartDb = slotStartHHMM + ":00";
+    const slotEndDb = slotEndHHMM + ":00";
 
     const { data: reservation, error: reservationError } = await adminClient
       .from("reservations")
       .insert({
         user_id: userId,
         reservation_date: reservationDate,
-        slot_start: slotStart,
-        slot_end: slotEnd,
+        slot_start: slotStartDb,
+        slot_end: slotEndDb,
         status: "confirmed",
       })
       .select()
       .single();
 
     if (reservationError || !reservation) {
-      return { error: `Error creando reserva: ${reservationError?.message || "No data"}`, success: false };
+      return {
+        error: "Error creando reserva: " + (reservationError?.message ?? "sin datos"),
+        success: false,
+      };
     }
 
-    // Save player names if provided
-    if (playerNames.length > 0) {
-      const playersToInsert = playerNames.map((name: string, idx: number) => ({
+    // Guardar jugadores (si los hay)
+    const cleanedPlayers = playerNames
+      .map((name, idx) => ({ name: (name ?? "").trim(), slot: idx + 1 }))
+      .filter((p) => p.name !== "");
+
+    if (cleanedPlayers.length > 0) {
+      const playersToInsert = cleanedPlayers.map((p) => ({
         reservation_id: reservation.id,
-        player_name: name,
-        slot_number: idx + 1,
+        player_name: p.name,
+        slot_number: p.slot,
       }));
 
       const { error: playersError } = await adminClient
@@ -119,12 +187,17 @@ export async function createReservationAsAdmin(
         .insert(playersToInsert);
 
       if (playersError) {
-        return { error: "Error guardando nombres de jugadores", success: false };
+        // Rollback: eliminar la reserva para no dejar estado inconsistente
+        await adminClient.from("reservations").delete().eq("id", reservation.id);
+        return {
+          error: "Error guardando nombres de jugadores: " + playersError.message,
+          success: false,
+        };
       }
     }
 
     return { error: "", success: true };
-  } catch (error) {
-    return { error: "Error inesperado", success: false };
+  } catch (error: any) {
+    return { error: "Error inesperado: " + (error?.message ?? String(error)), success: false };
   }
 }

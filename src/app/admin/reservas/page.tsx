@@ -315,18 +315,28 @@ export default function AdminCrearReservaPage() {
             <div>
               <label className="label">Duración</label>
               <div className="grid grid-cols-2 gap-3">
-                {([60, 90] as const).map((d) => (
-                  <button key={d} type="button" onClick={() => setDuration(d)}
-                    className={`rounded-2xl py-3 font-semibold transition-all border-2 ${
-                      duration === d
-                        ? "bg-gradient-to-br from-brand-600 to-brand-500 border-brand-600 text-white shadow-md shadow-brand-600/20"
-                        : "bg-white border-gray-200 text-gray-700 hover:border-brand-400 hover:bg-brand-50/50"
-                    }`}
-                  >
-                    <div className="text-xl font-bold">{d}</div>
-                    <div className="text-[11px] opacity-80 uppercase tracking-wide">min</div>
-                  </button>
-                ))}
+                {([60, 90] as const).map((d) => {
+                  const maxForSelected = selectedSlot ? getMaxDuration(selectedSlot) : 90;
+                  const isAvailable = !selectedSlot || maxForSelected >= d;
+                  return (
+                    <button
+                      key={d}
+                      type="button"
+                      disabled={!isAvailable}
+                      onClick={() => isAvailable && setDuration(d)}
+                      className={`rounded-2xl py-3 font-semibold transition-all border-2 ${
+                        !isAvailable
+                          ? "bg-gray-50 border-gray-100 text-gray-300 cursor-not-allowed"
+                          : duration === d
+                          ? "bg-gradient-to-br from-brand-600 to-brand-500 border-brand-600 text-white shadow-md shadow-brand-600/20"
+                          : "bg-white border-gray-200 text-gray-700 hover:border-brand-400 hover:bg-brand-50/50"
+                      }`}
+                    >
+                      <div className="text-xl font-bold">{d}</div>
+                      <div className="text-[11px] opacity-80 uppercase tracking-wide">min</div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -339,7 +349,13 @@ export default function AdminCrearReservaPage() {
                   const blocked = maxDuration === 0;
                   const isSelected = selectedSlot === t;
                   return (
-                    <button key={t} type="button" disabled={blocked} onClick={() => setSelectedSlot(t)}
+                    <button key={t} type="button" disabled={blocked} onClick={() => {
+                      setSelectedSlot(t);
+                      // Auto-ajustar duración si la seleccionada no cabe
+                      if (maxDuration > 0 && duration > maxDuration) {
+                        setDuration(maxDuration as 60 | 90);
+                      }
+                    }}
                       className={`slot-btn ${
                         blocked ? "slot-btn-disabled" : isSelected ? "slot-btn-selected" : "slot-btn-available"
                       }`}

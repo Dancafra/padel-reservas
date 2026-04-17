@@ -41,6 +41,11 @@ CREATE POLICY "Admins can read all reservation players" ON reservation_players
 FOR SELECT
 USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
 
+-- Allow admins to insert players for any reservation
+CREATE POLICY "Admin can insert reservation players" ON reservation_players
+FOR INSERT
+WITH CHECK (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
+
 -- Allow admins to delete reservation players
 CREATE POLICY "Admin can delete reservation players" ON reservation_players
 FOR DELETE

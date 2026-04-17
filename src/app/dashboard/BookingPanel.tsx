@@ -10,6 +10,7 @@ import {
   slotsOverlap,
   getCurrentTimeQR,
 } from "@/lib/constants";
+import { createReservation } from "./actions";
 
 interface Slot {
   slot_start: string;
@@ -143,45 +144,24 @@ export default function BookingPanel({
     setLoading(true);
     setMessage(null);
 
-    const slotEnd = addMinutes(selectedTime, selectedDuration);
+    const result = await createReservation(
+      userId,
+      selectedDate,
+      selectedTime,
+      selectedDuration,
+      playerNames
+    );
 
-    // 1. Crear la reserva
-    const { data: reservation, error: resError } = await supabase
-      .from("reservations")
-      .insert({
-        user_id: userId,
-        reservation_date: selectedDate,
-        slot_start: selectedTime + ":00",
-        slot_end: slotEnd + ":00",
-        status: "confirmed",
-      })
-      .select()
-      .single();
-
-    if (resError || !reservation) {
-      setMessage({ type: "error", text: "No se pudo hacer la reserva. El turno ya fue tomado." });
+    if (!result.success) {
+      setMessage({ type: "error", text: result.error ?? "No se pudo hacer la reserva." });
       setLoading(false);
       return;
     }
 
-    // 2. Guardar los jugadores que se llenaron (ignorar campos vacíos)
-    const playersToInsert = playerNames
-      .map((name, idx) => ({ name: name.trim(), slot: idx + 1 }))
-      .filter((p) => p.name !== "")
-      .map((p) => ({
-        reservation_id: reservation.id,
-        player_name: p.name,
-        slot_number: p.slot,
-      }));
-
-    if (playersToInsert.length > 0) {
-      await supabase.from("reservation_players").insert(playersToInsert);
-    }
-
-    const count = playersToInsert.length;
+    const slotEnd = addMinutes(selectedTime, selectedDuration);
     setMessage({
       type: "success",
-      text: `¡Reserva confirmada! ${formatTime(selectedTime)} – ${formatTime(slotEnd)} (${selectedDuration} min)${count > 0 ? ` · ${count} jugador${count > 1 ? "es" : ""}` : ""}`,
+      text: `¡Reserva confirmada! ${formatTime(selectedTime)} – ${formatTime(slotEnd)} (${selectedDuration} min)${result.count > 0 ? ` · ${result.count} jugador${result.count > 1 ? "es" : ""}` : ""}`,
     });
     setSelectedTime(null);
     setSelectedDuration(null);
